@@ -9,13 +9,10 @@ import (
   "time"
 )
 
-// tokenSource is an oauth2.TokenSource
-// which returns a static access token
 type tokenSource struct {
   token *oauth2.Token
 }
 
-// Token implements the oauth2.TokenSource interface
 func (t *tokenSource) Token() (*oauth2.Token, error){
   return t.token, nil
 }
@@ -40,6 +37,33 @@ func checkCommits(CommitsURL string, client *github.Client) (bool, string) {
   return false, newURL
 }
 
+func getStarred(user string, client *github.Client) ([]github.Repository, error) {
+  var starred []github.Repository
+  moar := true
+
+  xPage := 0
+  for moar {
+    opts := &github.ActivityListStarredOptions {
+        ListOptions: github.ListOptions{
+          Page:    xPage,
+          PerPage: 99,
+        },
+    }
+    repos, _, err := client.Activity.ListStarred(user, opts)
+    if err != nil {
+      return nil, err
+    }
+    for _, rp := range repos {
+      starred = append(starred, rp)
+    }
+    if len(repos) < 99 {
+      moar = false
+    }
+    xPage = xPage + 1
+  }
+  return starred, nil // second 'nil' coz "no errors". facepalm.
+}
+
 func main() {
   token, err := ioutil.ReadFile("starsguard.conf")
   if err != nil {
@@ -54,20 +78,19 @@ func main() {
 
   client := github.NewClient(tc)
 
-  // list all repositories for the authenticated user
-  repos, _, err := client.Activity.ListStarred("p0123n", nil)
+  starred, err := getStarred("p0123n", client)
 
   if err != nil {
     fmt.Println( err )
   }
 
-  // fmt.Println(reflect.TypeOf(client))
-  for k:=range repos {
-    result, url := checkCommits(*repos[k].CommitsURL, client)
+  for k:=range starred {
+    result, url := checkCommits(*starred[k].CommitsURL, client)
 
-    if result == true {
-      fmt.Println("Alive: ", url)
-    } else {
+    if result == false {
+      url = strings.Replace(url, "api.", "", 1)
+      url = strings.Replace(url, "/repos", "", 1)
+      url = strings.Replace(url, "/commits", "", 1)
       fmt.Println("Dead: ", url)
     }
   }
